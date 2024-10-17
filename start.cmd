@@ -1,3 +1,11 @@
 git pull origin master
-g++ main.cpp -o background-process-lib.exe
-background-process-lib.exe
+
+if not exist build (
+    mkdir build
+)
+
+cd build
+cmake ..
+cmake --build .
+cd Debug
+HelloWorld.exe
