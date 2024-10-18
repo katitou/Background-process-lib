@@ -1,3 +1,5 @@
 /.vscode
 /build
 main
+background-process-lib
+background-process-lib.exe
