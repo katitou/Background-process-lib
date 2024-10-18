@@ -1,5 +1,13 @@
 #!/bin/bash
 
 git pull origin master
-g++ main.cpp -o background-process-lib
-./background-process-lib
+
+if [ ! -d "build" ]; then
+    mkdir build
+fi
+
+cd build
+cmake ..
+make
+
+./HelloWorld
