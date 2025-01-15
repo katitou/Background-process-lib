@@ -40,7 +40,6 @@ struct TemperatureData {
 std::vector<TemperatureData> getDataFromLogFile(std::string filename, int lastSeconds) {
   std::lock_guard<std::mutex> lock(getMutex);
 
-  std::cout << "Get data from " << filename << std::endl;
   std::vector<TemperatureData> dataList;
   std::ifstream file(filename, std::ios::in);
   
@@ -55,10 +54,8 @@ std::vector<TemperatureData> getDataFromLogFile(std::string filename, int lastSe
 
   while (file >> data.temperature >> data.timestemp) {
     if (data.timestemp < currentTime - lastSeconds) {
-      std::cout << "Data " << data.temperature << " " << data.timestemp << " is not actual for " << currentTime - lastSeconds << std::endl;
       continue;
     }
-    std::cout << "Push " << data.temperature << " " << data.timestemp << std::endl;
     dataList.push_back(data);
   }
 
@@ -70,12 +67,11 @@ std::vector<TemperatureData> getDataFromLogFile(std::string filename, int lastSe
 void deleteOldLogs(std::string filename, int deleteUntill) {
   std::lock_guard<std::mutex> lock(deleteMutex);
   std::vector<TemperatureData> actualData = getDataFromLogFile(filename, deleteUntill);
-  
-  std::cout << "ActualData:" << actualData.size() << std::endl;
+
   for (auto& data : actualData) {
     std::cout << data.temperature << " " << data.timestemp << std::endl;
   }
-  std::cout << "Delete old logs for " << filename << " " << deleteUntill << std::endl;
+
   std::ofstream file(filename, std::ios::trunc);
   if (!file.is_open()) {
     std::cout << "Failed to open file " << filename << " for re-write";
@@ -83,7 +79,7 @@ void deleteOldLogs(std::string filename, int deleteUntill) {
   }
 
   for (auto& data : actualData) {
-    std::cout << "Write actual " << data.temperature << " " << data.timestemp << " to " << filename << std::endl;
+
     file << data.temperature << " " << data.timestemp << std::endl;
   }
 
@@ -108,7 +104,7 @@ bool setNonBlocking(HANDLE& hComm) {
 void getTemperatureDataFromUsbPort(const std::string& port) {
     std::cout << "Opening port " << port << std::endl;
     
-    // Открываем COM-порт
+
     HANDLE hComm = CreateFile(port.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
     
     if (hComm == INVALID_HANDLE_VALUE) {
@@ -116,7 +112,6 @@ void getTemperatureDataFromUsbPort(const std::string& port) {
         return;
     }
 
-    // Устанавливаем неблокирующий режим
     if (!setNonBlocking(hComm)) {
         std::cerr << "Error: Failed to set non-blocking mode." << std::endl;
         CloseHandle(hComm);
@@ -133,7 +128,7 @@ void getTemperatureDataFromUsbPort(const std::string& port) {
         if (!result) {
             DWORD dwError = GetLastError();
             if (dwError == ERROR_IO_PENDING) {
-                // Если данные еще не поступили, ждем 10 миллисекунд
+                
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 continue;
             } else {
@@ -142,93 +137,85 @@ void getTemperatureDataFromUsbPort(const std::string& port) {
             }
         }
 
-        // Если данные есть, добавляем их в буфер
+ 
         buffer += byte;
 
-        // Проверяем, пришел ли символ новой строки
+
         if (byte == '\n') {
             std::cout << "Received: " << buffer << std::endl;
 
-            // Парсим строку и сохраняем в структуру данных
             std::istringstream iss(buffer);
             TemperatureData data;
 
             if (iss >> data.temperature) {
                 data.timestemp = static_cast<unsigned int>(std::time(nullptr));
-                writeDataFromUsbToLog(data);  // Записываем данные в лог
+                writeDataFromUsbToLog(data);  
             } else {
                 std::cout << "Error: Incorrect data format: " << buffer << std::endl;
             }
 
-            buffer.clear();  // Очищаем буфер для следующей строки
+            buffer.clear(); 
         }
     }
 
-    CloseHandle(hComm);  // Закрываем дескриптор порта
+    CloseHandle(hComm); 
 }
 
 #else
 void setNonBlocking(int fd) {
-    fcntl(fd, F_SETFL, O_NONBLOCK);  // Устанавливаем неблокирующий режим
+    fcntl(fd, F_SETFL, O_NONBLOCK); 
 }
 
 void writeDataFromUsbToLog(TemperatureData data) {
   std::lock_guard<std::mutex> lock(usbPortMutex);
-  std::cout << "*******************************************" << std::endl;
-  std::cout << "Write " << data.temperature << " " << data.timestemp << std::endl;
+
   Logger::get(LOG_FILE) << data.temperature << " " << data.timestemp << std::endl;
   deleteOldLogs(LOG_FILE, SECONDS_IN_HOUR);
-  // Logger::close();
+
 }
 
 void getTemperatureDataFromUsbPort(std::string& port) {
-    std::cout << "Open port " << port << std::endl;
 
-    // Открытие порта для чтения
     int fd = open(port.c_str(), O_RDONLY | O_NONBLOCK);
     if (fd == -1) {
         std::cout << "Failed to open port for read data" << std::endl;
         return;
     }
 
-    setNonBlocking(fd);  // Устанавливаем неблокирующий режим
+    setNonBlocking(fd); 
 
     char byte;
-    std::string buffer;  // Буфер для хранения данных, которые поступают на порт
+    std::string buffer; 
 
     while (true) {
-        // Чтение одного байта, если он доступен
+
         ssize_t bytesRead = read(fd, &byte, 1);
 
         if (bytesRead == -1) {
-            // Если данные не доступны, ждем
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
         }
 
-        // Если данные есть, добавляем их в буфер
         buffer += byte;
 
-        // Проверяем, пришел ли символ новой строки
         if (byte == '\n') {
             std::cout << "Received: " << buffer << std::endl;
 
-            // Парсим строку и сохраняем в структуру данных
             std::istringstream iss(buffer);
             TemperatureData data;
 
             if (iss >> data.temperature) {
                 data.timestemp = static_cast<unsigned int>(std::time(nullptr));
-                writeDataFromUsbToLog(data);  // Записываем данные в лог
+                writeDataFromUsbToLog(data);
             } else {
                 std::cout << "Error: Incorrect data format: " << buffer << std::endl;
             }
 
-            buffer.clear();  // Очищаем буфер для следующей строки
+            buffer.clear();
         }
     }
 
-    close(fd);  // Закрываем дескриптор
+    close(fd);
 }
 #endif
 
@@ -257,8 +244,6 @@ void writeAveragePerTime(std::string filename, int lastSeconds) {
   } else if (filename == AVERAGE_PER_DAY) {
     deleteOldLogs(filename, SECONDS_IN_YEAR);
   }
-
-  // Logger::close();
 
 }
 

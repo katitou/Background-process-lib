@@ -64,7 +64,6 @@ void simulate_temperature_device(const std::string& port) {
 
         std::cout << "Sended: " << temperature << std::endl;
 
-        // Ожидание 3 секунды перед отправкой следующего значения
         std::this_thread::sleep_for(std::chrono::seconds(3));
     }
 
@@ -73,7 +72,7 @@ void simulate_temperature_device(const std::string& port) {
 }
 
 int main() {
-    const std::string device = "\\\\.\\COM3";  // Укажите ваш виртуальный COM порт
+    const std::string device = "\\\\.\\COM3";  
     simulate_temperature_device(device);
     return 0;
 }
