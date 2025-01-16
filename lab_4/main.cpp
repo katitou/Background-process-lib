@@ -87,28 +87,53 @@ void deleteOldLogs(std::string filename, int deleteUntill) {
 
 }
 
+void writeDataFromUsbToLog(TemperatureData data) {
+  std::lock_guard<std::mutex> lock(usbPortMutex);
+
+  Logger::get(LOG_FILE) << data.temperature << " " << data.timestemp << std::endl;
+  deleteOldLogs(LOG_FILE, SECONDS_IN_HOUR);
+
+}
+
 #ifdef _WIN32
 
 bool setNonBlocking(HANDLE& hComm) {
     COMMTIMEOUTS timeouts;
-    GetCommTimeouts(hComm, &timeouts);
+    if (!GetCommTimeouts(hComm, &timeouts)) {
+        std::cerr << "Error: Failed to get port timeouts." << std::endl;
+        return false;
+    }
+
     timeouts.ReadIntervalTimeout = 50;  // Время ожидания, если нет данных (в миллисекундах)
     timeouts.ReadTotalTimeoutConstant = 0;
     timeouts.ReadTotalTimeoutMultiplier = 0;
     timeouts.WriteTotalTimeoutConstant = 0;
     timeouts.WriteTotalTimeoutMultiplier = 0;
 
-    return SetCommTimeouts(hComm, &timeouts);
+    if (!SetCommTimeouts(hComm, &timeouts)) {
+        std::cerr << "Error: Failed to set port timeouts." << std::endl;
+        return false;
+    }
+
+    return true;
 }
 
 void getTemperatureDataFromUsbPort(const std::string& port) {
     std::cout << "Opening port " << port << std::endl;
-    
 
-    HANDLE hComm = CreateFile(port.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
-    
+    HANDLE hComm = CreateFile(port.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, 
+                              NULL, OPEN_EXISTING, 0, NULL);
+
     if (hComm == INVALID_HANDLE_VALUE) {
-        std::cerr << "Error: Unable to open port " << port << std::endl;
+        DWORD dwError = GetLastError();
+        std::cerr << "Error: Unable to open port " << port << ". Error code: " << dwError << std::endl;
+        return;
+    }
+
+    DWORD dwError;
+    if (!ClearCommError(hComm, &dwError, NULL)) {
+        std::cerr << "Error: Unable to clear errors for port " << port << ". Error code: " << dwError << std::endl;
+        CloseHandle(hComm);
         return;
     }
 
@@ -128,7 +153,6 @@ void getTemperatureDataFromUsbPort(const std::string& port) {
         if (!result) {
             DWORD dwError = GetLastError();
             if (dwError == ERROR_IO_PENDING) {
-                
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 continue;
             } else {
@@ -137,9 +161,7 @@ void getTemperatureDataFromUsbPort(const std::string& port) {
             }
         }
 
- 
         buffer += byte;
-
 
         if (byte == '\n') {
             std::cout << "Received: " << buffer << std::endl;
@@ -149,29 +171,22 @@ void getTemperatureDataFromUsbPort(const std::string& port) {
 
             if (iss >> data.temperature) {
                 data.timestemp = static_cast<unsigned int>(std::time(nullptr));
-                writeDataFromUsbToLog(data);  
+                writeDataFromUsbToLog(data);
             } else {
                 std::cout << "Error: Incorrect data format: " << buffer << std::endl;
             }
 
-            buffer.clear(); 
+            buffer.clear();
         }
     }
 
-    CloseHandle(hComm); 
+    CloseHandle(hComm);
 }
+
 
 #else
 void setNonBlocking(int fd) {
     fcntl(fd, F_SETFL, O_NONBLOCK); 
-}
-
-void writeDataFromUsbToLog(TemperatureData data) {
-  std::lock_guard<std::mutex> lock(usbPortMutex);
-
-  Logger::get(LOG_FILE) << data.temperature << " " << data.timestemp << std::endl;
-  deleteOldLogs(LOG_FILE, SECONDS_IN_HOUR);
-
 }
 
 void getTemperatureDataFromUsbPort(std::string& port) {
