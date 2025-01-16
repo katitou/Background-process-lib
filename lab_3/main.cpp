@@ -300,42 +300,45 @@ bool run_process_and_wait(const std::string& program, const std::string& argumen
 }
 
 void monitorProcesses() {
-    std::vector<bool> copy_status = {true, true}; // Флаги, показывающие занятость копий
+    std::vector<bool> copy_status = {true, true};
+    std::mutex status_mutex;
 
     while (true) {
         for (int i = 0; i < 2; ++i) {
+            std::lock_guard<std::mutex> lock(status_mutex); // Блокируем доступ к copy_status
             if (copy_status[i]) {
-                std::string argument = (i == 0) ? "copy1" : "copy2";
-                
-                std::thread([&copy_status, argument, i] () {
-                  int exitCode;
-                  if (run_process_and_wait("./out", argument, exitCode)) {
-                    copy_status[i] = true;
-                  } else {
-                    Logger::get() << "Copy: " << argument << " exited with code " << exitCode;
-                    copy_status[i] = true;
-                  }
+                copy_status[i] = false; // Устанавливаем статус "занят"
+
+                std::thread([&copy_status, i, &status_mutex]() {
+                    int exitCode;
+                    std::string argument = (i == 0) ? "copy1" : "copy2";
+
+                    bool success = run_process_and_wait("./app", argument, exitCode);
+
+
+                    {
+                        std::lock_guard<std::mutex> lock(status_mutex);
+                        copy_status[i] = true; // Освобождаем копию
+                    }
+
+                    if (!success) {
+                        Logger::get() << "Process " << argument << " failed with code " << std::to_string(exitCode) << std::endl;
+                    }
                 }).detach();
-                
+
             } else {
-              Logger::get() << ("Copy" + std::to_string(i + 1) + " is running. Continue") << std::endl;
+                Logger::get() << "Copy " << std::to_string(i + 1) << " is running. Continue" << std::endl;
             }
         }
 
-        std::this_thread::sleep_for(std::chrono::seconds(3)); // Ждём 3 секунды перед следующим циклом
+        std::this_thread::sleep_for(std::chrono::seconds(3));
     }
 }
+
   
 int main(int argc, char* argv[]) {
-  // cleanupSharedMemory();
   
   bool isMain = isMainProcess(LOCK_FILE);
-  
-//  if (isMain) {
-//    std::cout << "It's main process" << std::endl;
-//  } else {
-//    std::cout << "It's NOT main process" << std::endl;
-//  }
   
   SharedCounter* sharedCounter = createSharedMemory(SHARED_MEMORY_NAME, isMain);
 
@@ -386,11 +389,11 @@ int main(int argc, char* argv[]) {
   incrementCountTimerThred.detach();
   tuiThread.join();
   
-
   Logger::close();
-  cleanupSharedMemory();
 
-//  std::cout << "Exit with code 0" << std::endl;
+  if (isMain) {
+    cleanupSharedMemory();
+  }
 
   return 0;
 }
